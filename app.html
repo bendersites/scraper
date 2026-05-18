@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>BenderSites Scraper</title>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;background:#f5f5f3;color:#1a1a1a;height:100vh;display:flex;flex-direction:column}
+header{background:#fff;border-bottom:1px solid #e5e5e3;padding:0.75rem 1.25rem;display:flex;align-items:center;gap:10px;flex-shrink:0;flex-wrap:wrap}
+header h1{font-size:15px;font-weight:500}
+input,select{font-size:13px;padding:5px 10px;border-radius:7px;border:1px solid #e5e5e3;background:#fff;color:#1a1a1a;height:32px;outline:none}
+.btn{font-size:13px;padding:5px 14px;border-radius:7px;border:1px solid #e5e5e3;background:#fff;color:#1a1a1a;cursor:pointer;height:32px;white-space:nowrap;display:inline-flex;align-items:center;gap:5px}
+.btn:hover{background:#f5f5f3}
+.btn-dark{background:#1a1a1a;color:#fff;border-color:#1a1a1a}
+.btn-dark:hover{opacity:0.85;background:#1a1a1a}
+.btn-dark:disabled{opacity:0.4;cursor:not-allowed}
+.btn-green{background:#f0fdf4;color:#15803d;border-color:#22c55e}
+.btn-red{background:#fef2f2;color:#dc2626;border-color:#f87171}
+.status{font-size:12px;color:#3b82f6;margin-left:4px}
+.legend{display:flex;gap:10px;align-items:center;margin-left:auto}
+.leg{display:flex;align-items:center;gap:5px;font-size:12px;color:#555}
+.leg-dot{width:12px;height:12px;border-radius:3px;border:1px solid #bbb}
+
+/* Layout */
+.main{display:flex;flex:1;overflow:hidden}
+#map{flex:1}
+.sidebar{width:320px;background:#fff;border-left:1px solid #e5e5e3;display:flex;flex-direction:column;overflow:hidden}
+.sidebar-tabs{display:flex;border-bottom:1px solid #e5e5e3;flex-shrink:0}
+.tab{flex:1;padding:10px;font-size:13px;text-align:center;cursor:pointer;color:#888;border-bottom:2px solid transparent}
+.tab.active{color:#1a1a1a;border-bottom-color:#1a1a1a}
+.tab-content{flex:1;overflow-y:auto;padding:12px}
+.tab-content.hidden{display:none}
+
+/* PLZ Panel */
+.plz-input-row{display:flex;gap:6px;margin-bottom:10px}
+.plz-input-row input{flex:1}
+.plz-list{display:flex;flex-direction:column;gap:4px}
+.plz-item{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:7px;border:1px solid #e5e5e3;background:#fff;cursor:pointer}
+.plz-item:hover{background:#f5f5f3}
+.plz-dot{width:10px;height:10px;border-radius:50%;flex-shrink:0}
+.plz-name{flex:1;font-size:13px}
+.plz-status{font-size:11px;color:#888}
+.plz-actions{display:flex;gap:4px}
+.plz-btn{font-size:11px;padding:2px 8px;border-radius:5px;border:1px solid #e5e5e3;cursor:pointer;background:#fff}
+
+/* Leads Panel */
+.lead-card{border:1px solid #e5e5e3;border-radius:8px;padding:10px;margin-bottom:8px;background:#fff}
+.lead-name{font-size:14px;font-weight:500;margin-bottom:2px}
+.lead-addr{font-size:12px;color:#888;margin-bottom:6px}
+.lead-meta{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:6px}
+.lead-actions{display:flex;gap:4px;flex-wrap:wrap}
+.lead-btn{font-size:11px;padding:3px 9px;border-radius:6px;border:1px solid #e5e5e3;text-decoration:none;color:#1a1a1a;background:#fff;cursor:pointer;white-space:nowrap}
+.lead-btn:hover{background:#f5f5f3}
+.lead-btn-call{border-color:#1D9E75;color:#0F6E56;background:#f0fdf8}
+.rating{font-size:12px;color:#b45309}
+.kat{font-size:11px;color:#6366f1;font-weight:500}
+.reviews-box{margin-top:8px;border-top:1px solid #f0f0ee;padding-top:8px;display:none}
+.reviews-box.open{display:block}
+.rev-item{padding:6px 0;border-bottom:1px solid #f5f5f3;font-size:12px;color:#555;line-height:1.5}
+.rev-item:last-child{border-bottom:none}
+.rev-featured{background:#fffbeb;border-radius:5px;padding:6px;margin-bottom:4px}
+.rev-label{font-size:10px;font-weight:600;color:#b45309;margin-bottom:2px}
+
+/* Search panel */
+.search-section{padding:12px;border-bottom:1px solid #e5e5e3;flex-shrink:0}
+.search-row{display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap}
+.search-row input,.search-row select{flex:1;min-width:80px}
+.stat-row{display:flex;gap:8px;margin-top:8px;flex-wrap:wrap}
+.stat{background:#f5f5f3;border-radius:7px;padding:6px 10px;font-size:12px;flex:1;text-align:center}
+.stat-n{font-size:18px;font-weight:500;display:block}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>BenderSites Scraper</h1>
+  <span class="status" id="headerStatus"></span>
+  <div class="legend">
+    <div class="leg"><div class="leg-dot" style="background:#86efac;border-color:#22c55e"></div>Gescrapt</div>
+    <div class="leg"><div class="leg-dot" style="background:#e2e8f0;border-color:#94a3b8"></div>Offen</div>
+    <div class="leg"><div class="leg-dot" style="background:#93c5fd;border-color:#3b82f6"></div>Aktiv</div>
+  </div>
+  <button class="btn btn-green" onclick="exportCSV()" style="margin-left:8px">CSV exportieren</button>
+</header>
+
+<div class="main">
+  <div id="map"></div>
+  <div class="sidebar">
+    <div class="search-section">
+      <div class="search-row">
+        <input type="text" id="branche" placeholder="Branche (z.B. Blumengeschäft)" value="Blumengeschäft" style="flex:2">
+      </div>
+      <div class="search-row">
+        <input type="text" id="plzInput" placeholder="PLZ eingeben..." style="flex:2" onkeydown="if(event.key==='Enter')addPLZ()">
+        <input type="number" id="radius" value="0" min="0" max="50" style="width:60px;flex:none" title="Radius km (0=PLZ-Modus)">
+        <button class="btn" onclick="addPLZ()">+</button>
+      </div>
+      <button class="btn btn-dark" id="scrapeBtn" onclick="scrapeSelected()" style="width:100%">Ausgewählte PLZ scrapen</button>
+      <div class="stat-row" id="statRow" style="display:none">
+        <div class="stat"><span class="stat-n" id="sTotal">0</span>Gefunden</div>
+        <div class="stat"><span class="stat-n" id="sNoWeb">0</span>Kein Web</div>
+        <div class="stat"><span class="stat-n" id="sSocial">0</span>Social</div>
+      </div>
+    </div>
+
+    <div class="sidebar-tabs">
+      <div class="tab active" onclick="switchTab('plz')">PLZ</div>
+      <div class="tab" onclick="switchTab('leads')">Leads (<span id="leadCount">0</span>)</div>
+    </div>
+
+    <div class="tab-content" id="tabPLZ">
+      <div class="plz-list" id="plzList">
+        <p style="color:#aaa;font-size:12px;text-align:center;padding:20px 0">PLZ oben eingeben</p>
+      </div>
+    </div>
+    <div class="tab-content hidden" id="tabLeads">
+      <div id="leadsList"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+var API = '';
+var SOCIAL = ['instagram.com','facebook.com','fb.com','tiktok.com','twitter.com','x.com','linkedin.com','youtube.com'];
+var allLeads = [];
+var plzData = {}; // plz -> {layer, status: 'open'|'done'|'selected', lat, lng}
+var currentPLZ = null;
+
+// LocalStorage
+function getDB(){ try{return JSON.parse(localStorage.getItem('bs_scraper')||'{}')}catch(e){return {}} }
+function saveDB(d){ localStorage.setItem('bs_scraper', JSON.stringify(d)) }
+function isDone(plz){ var d=getDB(); return !!(d.done && d.done[plz]); }
+function markDone(plz){ var d=getDB(); if(!d.done)d.done={}; d.done[plz]=new Date().toISOString().slice(0,10); saveDB(d); }
+function unmarkDone(plz){ var d=getDB(); if(d.done) delete d.done[plz]; saveDB(d); }
+function getAllDone(){ var d=getDB(); return d.done?Object.keys(d.done):[]; }
+
+// Map
+var map = L.map('map', {center:[51.2,10.4], zoom:6});
+L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+  attribution:'© OpenStreetMap', opacity:0.5
+}).addTo(map);
+
+function styleFor(plz){
+  var status = plzData[plz] ? plzData[plz].status : 'open';
+  if(status==='done') return {fillColor:'#86efac',fillOpacity:0.6,color:'#22c55e',weight:2};
+  if(status==='selected') return {fillColor:'#93c5fd',fillOpacity:0.65,color:'#3b82f6',weight:2.5};
+  return {fillColor:'#e2e8f0',fillOpacity:0.4,color:'#94a3b8',weight:1};
+}
+
+function setStatus(msg){ document.getElementById('headerStatus').textContent = msg; }
+
+async function get(path){
+  var r = await fetch(API + path);
+  if(!r.ok) throw new Error(await r.text());
+  return r.json();
+}
+
+function isSocial(url){ return url && SOCIAL.some(function(s){ return url.toLowerCase().includes(s); }); }
+function stars(r){ if(!r) return ''; var f=Math.round(r); return '★'.repeat(f)+'☆'.repeat(5-f)+' '+r.toFixed(1); }
+
+// PLZ hinzufügen
+async function addPLZ(){
+  var raw = document.getElementById('plzInput').value.trim();
+  if(!raw) return;
+
+  var parts = raw.split(/[\s,;]+/).filter(function(p){ return p.length >= 4; });
+  document.getElementById('plzInput').value = '';
+
+  for(var i=0; i<parts.length; i++){
+    var plz = parts[i];
+    if(plzData[plz]) continue;
+    setStatus('Lade '+plz+'...');
+    try {
+      var data = await get('/nominatim?plz='+encodeURIComponent(plz));
+      addPLZToMap(plz, data.geojson, data.lat, data.lng);
+    } catch(e){ setStatus('PLZ '+plz+' nicht gefunden'); }
+    await new Promise(function(r){setTimeout(r,1100)});
+  }
+  setStatus('');
+  renderPLZList();
+}
+
+function addPLZToMap(plz, geojson, lat, lng){
+  var done = isDone(plz);
+  plzData[plz] = { status: done ? 'done' : 'open', lat: lat, lng: lng };
+  var layer = L.geoJSON(geojson, {style: styleFor(plz)});
+  layer.bindTooltip(plz, {sticky:true});
+  layer.on('click', function(e){
+    selectPLZ(plz);
+    L.DomEvent.stopPropagation(e);
+  });
+  layer.addTo(map);
+  plzData[plz].layer = layer;
+}
+
+function selectPLZ(plz){
+  // Toggle selection
+  if(plzData[plz].status === 'selected'){
+    plzData[plz].status = isDone(plz) ? 'done' : 'open';
+  } else if(plzData[plz].status !== 'done'){
+    plzData[plz].status = 'selected';
+  }
+  plzData[plz].layer.setStyle(styleFor(plz));
+  renderPLZList();
+}
+
+function getSelected(){ return Object.keys(plzData).filter(function(p){ return plzData[p].status==='selected'; }); }
+
+function renderPLZList(){
+  var list = document.getElementById('plzList');
+  var keys = Object.keys(plzData).sort();
+  if(!keys.length){
+    list.innerHTML = '<p style="color:#aaa;font-size:12px;text-align:center;padding:20px 0">PLZ oben eingeben</p>';
+    return;
+  }
+  list.innerHTML = keys.map(function(plz){
+    var s = plzData[plz].status;
+    var color = s==='done'?'#86efac':s==='selected'?'#93c5fd':'#e2e8f0';
+    var border = s==='done'?'#22c55e':s==='selected'?'#3b82f6':'#94a3b8';
+    var label = s==='done'?'Gescrapt':s==='selected'?'Ausgewählt':'Offen';
+    return '<div class="plz-item" onclick="jumpTo(\''+plz+'\')">'
+      +'<div class="plz-dot" style="background:'+color+';border:1.5px solid '+border+'"></div>'
+      +'<span class="plz-name">'+plz+'</span>'
+      +'<span class="plz-status">'+label+'</span>'
+      +'<div class="plz-actions">'
+      +(s!=='done'?'<button class="plz-btn" onclick="event.stopPropagation();toggleSelect(\''+plz+'\')">'+(s==='selected'?'✕':'✓')+'</button>':'')
+      +(s==='done'?'<button class="plz-btn" style="color:#dc2626" onclick="event.stopPropagation();resetPLZ(\''+plz+'\')">↺</button>':'')
+      +'</div>'
+      +'</div>';
+  }).join('');
+}
+
+function toggleSelect(plz){
+  if(!plzData[plz]) return;
+  plzData[plz].status = plzData[plz].status==='selected' ? 'open' : 'selected';
+  plzData[plz].layer.setStyle(styleFor(plz));
+  renderPLZList();
+}
+
+function resetPLZ(plz){
+  unmarkDone(plz);
+  plzData[plz].status = 'open';
+  plzData[plz].layer.setStyle(styleFor(plz));
+  renderPLZList();
+}
+
+function jumpTo(plz){
+  if(!plzData[plz]) return;
+  map.fitBounds(plzData[plz].layer.getBounds());
+}
+
+// Scrapen
+function buildGrid(lat, lng, radiusKm){
+  var stepKm = radiusKm>15?8:radiusKm>8?5:radiusKm||5;
+  var points=[],seen={};
+  var latStep=stepKm/111, lngStep=stepKm/(111*Math.cos(lat*Math.PI/180));
+  var steps=Math.ceil((radiusKm||5)/stepKm);
+  for(var dy=-steps;dy<=steps;dy++){
+    for(var dx=-steps;dx<=steps;dx++){
+      var la=lat+dy*latStep, lo=lng+dx*lngStep;
+      var dist=Math.sqrt(Math.pow((la-lat)*111,2)+Math.pow((lo-lng)*111*Math.cos(lat*Math.PI/180),2));
+      if(dist<=(radiusKm||5)){
+        var key=la.toFixed(3)+','+lo.toFixed(3);
+        if(!seen[key]){seen[key]=true;points.push({lat:la,lng:lo});}
+      }
+    }
+  }
+  return points;
+}
+
+async function fetchFromPoint(lat,lng,radiusKm,keyword){
+  var places=[],token='',page=0;
+  do{
+    if(token) await new Promise(function(r){setTimeout(r,2200)});
+    var url='/search?lat='+lat+'&lng='+lng+'&radius='+(radiusKm*1000)+'&keyword='+encodeURIComponent(keyword);
+    if(token) url+='&pagetoken='+encodeURIComponent(token);
+    try{var res=await get(url);if(res.status==='OK')places=places.concat(res.results||[]);token=res.next_page_token||'';}catch(e){token='';}
+    page++;
+  }while(token&&page<3);
+  return places;
+}
+
+async function scrapeSelected(){
+  var selected = getSelected();
+  if(!selected.length){ alert('Keine PLZ ausgewählt. Klick auf PLZ-Gebiet oder ✓ in der Liste.'); return; }
+
+  var branche = document.getElementById('branche').value.trim();
+  if(!branche){ alert('Branche eingeben.'); return; }
+  var radiusKm = parseInt(document.getElementById('radius').value)||0;
+
+  var btn = document.getElementById('scrapeBtn');
+  btn.disabled = true;
+  allLeads = [];
+  document.getElementById('statRow').style.display = 'none';
+
+  for(var pi=0; pi<selected.length; pi++){
+    var plz = selected[pi];
+    var pdata = plzData[plz];
+    setStatus('Scrape PLZ '+plz+' ('+( pi+1)+'/'+selected.length+')...');
+
+    var searchLat = pdata.lat, searchLng = pdata.lng;
+    var searchRadius = radiusKm > 0 ? radiusKm : 5;
+    var points = buildGrid(searchLat, searchLng, searchRadius);
+
+    var seenIds = {}, allPlaces = [];
+    for(var p=0;p<points.length;p++){
+      setStatus('PLZ '+plz+': Bereich '+(p+1)+'/'+points.length+'...');
+      var results = await fetchFromPoint(points[p].lat, points[p].lng, searchRadius/points.length*2+2, branche);
+      results.forEach(function(place){
+        if(!seenIds[place.place_id]){seenIds[place.place_id]=true;allPlaces.push(place);}
+      });
+      await new Promise(function(r){setTimeout(r,300)});
+    }
+
+    for(var i=0;i<allPlaces.length;i++){
+      setStatus('PLZ '+plz+': Details '+(i+1)+'/'+allPlaces.length+'...');
+      try{
+        var det = await get('/details?place_id='+allPlaces[i].place_id);
+        det.place_id = allPlaces[i].place_id;
+        det.user_ratings_total = allPlaces[i].user_ratings_total||0;
+        det._plz = plz;
+        if(det.user_ratings_total >= 10 && (det.rating||0) >= 3.5){
+          allLeads.push(det);
+        }
+      }catch(e){}
+      await new Promise(function(r){setTimeout(r,80)});
+    }
+
+    // PLZ als gescrapt markieren
+    markDone(plz);
+    plzData[plz].status = 'done';
+    plzData[plz].layer.setStyle(styleFor(plz));
+  }
+
+  var noWeb = allLeads.filter(function(p){return !p.website;}).length;
+  var social = allLeads.filter(function(p){return isSocial(p.website);}).length;
+  document.getElementById('sTotal').textContent = allLeads.length;
+  document.getElementById('sNoWeb').textContent = noWeb;
+  document.getElementById('sSocial').textContent = social;
+  document.getElementById('statRow').style.display = 'flex';
+  document.getElementById('leadCount').textContent = allLeads.length;
+
+  renderLeads();
+  renderPLZList();
+  switchTab('leads');
+  setStatus('Fertig — '+allLeads.length+' Leads gefunden');
+  btn.disabled = false;
+}
+
+function filterReviews(reviews){
+  var good=(reviews||[]).filter(function(r){return r.rating>=4&&r.text&&r.text.length>=80;});
+  if(!good.length) good=(reviews||[]).filter(function(r){return r.rating>=4&&r.text;});
+  good.sort(function(a,b){return b.text.length-a.text.length;});
+  var featured=good.find(function(r){return r.rating===5;})||good[0]||null;
+  return {all:good.slice(0,5),featured:featured};
+}
+
+function renderLeads(){
+  var html = allLeads.map(function(p,i){
+    var phone=p.formatted_phone_number||'';
+    var rat=p.rating?'<span class="rating">'+stars(p.rating)+'</span>':'';
+    var revCount=p.user_ratings_total?'<span style="font-size:11px;color:#888">('+p.user_ratings_total+')</span>':'';
+    var pid=p.place_id||'';
+    var webLabel=p.website?'Website':'';
+    var webTag=p.website?'<a class="lead-btn" href="'+p.website+'" target="_blank">'+webLabel+'</a>':'';
+    return '<div class="lead-card">'
+      +'<div class="lead-name">'+p.name+'</div>'
+      +'<div class="lead-addr">'+(p.formatted_address||'')+'</div>'
+      +'<div class="lead-meta">'+rat+revCount+'<span class="kat">PLZ '+p._plz+'</span></div>'
+      +'<div class="lead-actions">'
+      +(phone?'<a class="lead-btn lead-btn-call" href="tel:'+phone+'">'+phone+'</a>':'')
+      +webTag
+      +(p.url?'<a class="lead-btn" href="'+p.url+'" target="_blank">Maps</a>':'')
+      +(pid?'<button class="lead-btn" onclick="loadReviews(\''+pid+'\','+i+')">Reviews</button>':'')
+      +'</div>'
+      +'<div class="reviews-box" id="rev-'+i+'"></div>'
+      +'</div>';
+  }).join('');
+  document.getElementById('leadsList').innerHTML = html || '<p style="color:#aaa;font-size:12px;padding:20px 0;text-align:center">Noch keine Leads</p>';
+}
+
+async function loadReviews(placeId,idx){
+  var box=document.getElementById('rev-'+idx);
+  if(box.classList.contains('open')){box.classList.remove('open');return;}
+  box.innerHTML='<p style="font-size:12px;color:#888;padding:4px 0">Lädt...</p>';
+  box.classList.add('open');
+  try{
+    var det=await get('/details?place_id='+placeId);
+    var f=filterReviews(det.reviews);
+    if(!f.all.length){box.innerHTML='<p style="font-size:12px;color:#888">Keine Rezensionen.</p>';return;}
+    var html='';
+    f.all.forEach(function(r,i){
+      var isFeat=f.featured&&r.author_name===f.featured.author_name;
+      html+='<div class="rev-item'+(isFeat?' rev-featured':'')+'">'
+        +(isFeat?'<div class="rev-label">FEATURED</div>':'')
+        +r.text+'</div>';
+    });
+    html+='<button class="lead-btn" style="margin-top:6px" onclick="copyRevs('+idx+')">Kopieren</button>';
+    html+='<textarea id="revraw-'+idx+'" style="display:none">'+f.all.map(function(r){return r.text;}).join('\n\n')+'</textarea>';
+    box.innerHTML=html;
+  }catch(e){box.innerHTML='<p style="font-size:12px;color:#dc2626">Fehler.</p>';}
+}
+
+function copyRevs(idx){
+  var ta=document.getElementById('revraw-'+idx);
+  if(ta) navigator.clipboard.writeText(ta.value);
+}
+
+async function exportCSV(){
+  if(!allLeads.length){alert('Erst scrapen.');return;}
+  var btn = document.querySelector('.btn-green');
+  btn.textContent='Lädt...';
+
+  for(var i=0;i<allLeads.length;i++){
+    if(!allLeads[i].reviews&&allLeads[i].place_id){
+      try{
+        var det=await get('/details?place_id='+allLeads[i].place_id);
+        allLeads[i].reviews=det.reviews||[];
+        if(det.opening_hours) allLeads[i].opening_hours=det.opening_hours;
+      }catch(e){allLeads[i].reviews=[];}
+      await new Promise(function(r){setTimeout(r,100)});
+    }
+  }
+
+  var rows=[['PLZ','Name','Adresse','Telefon','Bewertung','Anzahl Bewertungen','Öffnungszeiten','Website','Google Maps','Featured Review','Review 1','Review 2','Review 3','Review 4']];
+  allLeads.forEach(function(p){
+    var f=filterReviews(p.reviews);
+    var revs=f.all.map(function(r){return r.text||'';});
+    while(revs.length<4) revs.push('');
+    var hours=(p.opening_hours&&p.opening_hours.weekday_text)?p.opening_hours.weekday_text.join(' | '):'';
+    rows.push([p._plz||'',p.name||'',p.formatted_address||'',p.formatted_phone_number||'',p.rating||'',p.user_ratings_total||'',hours,p.website||'',p.url||'',f.featured?f.featured.text:'',revs[0],revs[1],revs[2],revs[3]]);
+  });
+
+  var csv=rows.map(function(r){return r.map(function(v){return '"'+String(v).replace(/"/g,'""')+'"';}).join(',');}).join('\n');
+  var blob=new Blob(['\ufeff'+csv],{type:'text/csv;charset=utf-8'});
+  var a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='leads_'+new Date().toISOString().slice(0,10)+'.csv';
+  a.click();
+  btn.textContent='CSV exportieren';
+}
+
+function switchTab(tab){
+  document.querySelectorAll('.tab').forEach(function(t,i){t.classList.toggle('active',i===(tab==='plz'?0:1));});
+  document.getElementById('tabPLZ').classList.toggle('hidden', tab!=='plz');
+  document.getElementById('tabLeads').classList.toggle('hidden', tab!=='leads');
+}
+
+map.on('click',function(){});
+
+// Beim Start: gespeicherte PLZ laden
+async function loadSaved(){
+  var done = getAllDone();
+  if(!done.length) return;
+  setStatus('Lade gespeicherte PLZ...');
+  for(var i=0;i<done.length;i++){
+    var plz=done[i];
+    if(plzData[plz]) continue;
+    try{
+      var data=await get('/nominatim?plz='+encodeURIComponent(plz));
+      addPLZToMap(plz,data.geojson,data.lat,data.lng);
+    }catch(e){}
+    await new Promise(function(r){setTimeout(r,1100)});
+  }
+  setStatus('');
+  renderPLZList();
+}
+
+loadSaved();
+</script>
+</body>
+</html>
