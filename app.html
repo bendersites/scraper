@@ -91,7 +91,14 @@ input,select{font-size:13px;padding:5px 10px;border-radius:7px;border:1px solid 
   <div class="sidebar">
     <div class="search-section">
       <div class="search-row">
-        <input type="text" id="branche" placeholder="Branche (z.B. Blumengeschäft)" value="Blumengeschäft" style="flex:2">
+        <select id="branche" style="flex:2" onchange="onBrancheChange()">
+          <option value="blumen">Blumengeschäfte</option>
+          <option value="schreibwaren">Schreibwaren</option>
+          <option value="friseur">Friseur</option>
+          <option value="fusspflege">Fußpflege</option>
+          <option value="nagelstudio">Nagelstudio</option>
+          <option value="kosmetik">Kosmetik & Beauty</option>
+        </select>
       </div>
       <div class="search-row">
         <input type="text" id="plzInput" placeholder="PLZ eingeben..." style="flex:2" onkeydown="if(event.key==='Enter')addPLZ()">
@@ -126,16 +133,32 @@ input,select{font-size:13px;padding:5px 10px;border-radius:7px;border:1px solid 
 var API = '';
 var SOCIAL = ['instagram.com','facebook.com','fb.com','tiktok.com','twitter.com','x.com','linkedin.com','youtube.com'];
 var allLeads = [];
-var plzData = {}; // plz -> {layer, status: 'open'|'done'|'selected', lat, lng}
+var plzData = {};
 var currentPLZ = null;
 
-// LocalStorage
-function getDB(){ try{return JSON.parse(localStorage.getItem('bs_scraper')||'{}')}catch(e){return {}} }
-function saveDB(d){ localStorage.setItem('bs_scraper', JSON.stringify(d)) }
-function isDone(plz){ var d=getDB(); return !!(d.done && d.done[plz]); }
-function markDone(plz){ var d=getDB(); if(!d.done)d.done={}; d.done[plz]=new Date().toISOString().slice(0,10); saveDB(d); }
-function unmarkDone(plz){ var d=getDB(); if(d.done) delete d.done[plz]; saveDB(d); }
-function getAllDone(){ var d=getDB(); return d.done?Object.keys(d.done):[]; }
+var BRANCHEN = {
+  blumen:      { label:'Blumengeschäfte',  keywords:['Blumengeschäft','Florist','Blumenladen'],                          minRating:4.5 },
+  schreibwaren:{ label:'Schreibwaren',     keywords:['Schreibwaren','Schreibwarenhandlung','Papiergeschäft','Bürobedarf','Papeterie'], minRating:3.5 },
+  friseur:     { label:'Friseur',          keywords:['Friseur','Friseursalon','Barbershop','Haarschnitt'],               minRating:4.5 },
+  fusspflege:  { label:'Fußpflege',        keywords:['Fußpflege','Podologie','Nagelstudio Fußpflege'],                  minRating:4.0 },
+  nagelstudio: { label:'Nagelstudio',      keywords:['Nagelstudio','Nageldesign','Nail Studio','Gel Nägel'],            minRating:4.0 },
+  kosmetik:    { label:'Kosmetik & Beauty',keywords:['Kosmetikstudio','Kosmetik','Beauty Salon','Beautysalon','Waxing'], minRating:4.0 }
+};
+
+function currentBranche(){ return document.getElementById('branche').value; }
+function currentBrancheLabel(){ return BRANCHEN[currentBranche()].label; }
+
+// LocalStorage — pro Branche getrennt
+function getDB(){ try{return JSON.parse(localStorage.getItem('bs_scraper2')||'{}')}catch(e){return {}} }
+function saveDB(d){ localStorage.setItem('bs_scraper2', JSON.stringify(d)) }
+function isDone(plz){ var d=getDB(),b=currentBranche(); return !!(d[b]&&d[b][plz]); }
+function isDoneAny(plz){ var d=getDB(); return Object.keys(BRANCHEN).some(function(b){ return d[b]&&d[b][plz]; }); }
+function markDone(plz){ var d=getDB(),b=currentBranche(); if(!d[b])d[b]={}; d[b][plz]=new Date().toISOString().slice(0,10); saveDB(d); }
+function unmarkDone(plz){ var d=getDB(),b=currentBranche(); if(d[b]) delete d[b][plz]; saveDB(d); }
+function getAllDone(){
+  var d=getDB(),b=currentBranche();
+  return d[b]?Object.keys(d[b]):[];
+}
 
 // Map
 var map = L.map('map', {center:[51.2,10.4], zoom:6});
@@ -233,7 +256,18 @@ function renderPLZList(){
   }).join('');
 }
 
-function toggleSelect(plz){
+function onBrancheChange(){
+  // Alle PLZ-Status neu einfärben basierend auf gewählter Branche
+  Object.keys(plzData).forEach(function(plz){
+    if(plzData[plz].status !== 'selected'){
+      plzData[plz].status = isDone(plz) ? 'done' : 'open';
+      plzData[plz].layer.setStyle(styleFor(plz));
+    }
+  });
+  renderPLZList();
+  // Gespeicherte PLZ für diese Branche laden
+  loadSaved();
+}
   if(!plzData[plz]) return;
   plzData[plz].status = plzData[plz].status==='selected' ? 'open' : 'selected';
   plzData[plz].layer.setStyle(styleFor(plz));
@@ -285,11 +319,12 @@ async function fetchFromPoint(lat,lng,radiusKm,keyword){
 
 async function scrapeSelected(){
   var selected = getSelected();
-  if(!selected.length){ alert('Keine PLZ ausgewählt. Klick auf PLZ-Gebiet oder ✓ in der Liste.'); return; }
+  if(!selected.length){ alert('Keine PLZ ausgewählt.'); return; }
 
-  var branche = document.getElementById('branche').value.trim();
-  if(!branche){ alert('Branche eingeben.'); return; }
+  var brancheKey = currentBranche();
+  var branche = BRANCHEN[brancheKey];
   var radiusKm = parseInt(document.getElementById('radius').value)||0;
+  var searchRadius = radiusKm > 0 ? radiusKm : 5;
 
   var btn = document.getElementById('scrapeBtn');
   btn.disabled = true;
@@ -299,37 +334,40 @@ async function scrapeSelected(){
   for(var pi=0; pi<selected.length; pi++){
     var plz = selected[pi];
     var pdata = plzData[plz];
-    setStatus('Scrape PLZ '+plz+' ('+( pi+1)+'/'+selected.length+')...');
+    var seenIds = {};
 
-    var searchLat = pdata.lat, searchLng = pdata.lng;
-    var searchRadius = radiusKm > 0 ? radiusKm : 5;
-    var points = buildGrid(searchLat, searchLng, searchRadius);
+    for(var k=0; k<branche.keywords.length; k++){
+      var keyword = branche.keywords[k];
+      var points = buildGrid(pdata.lat, pdata.lng, searchRadius);
 
-    var seenIds = {}, allPlaces = [];
-    for(var p=0;p<points.length;p++){
-      setStatus('PLZ '+plz+': Bereich '+(p+1)+'/'+points.length+'...');
-      var results = await fetchFromPoint(points[p].lat, points[p].lng, searchRadius/points.length*2+2, branche);
-      results.forEach(function(place){
-        if(!seenIds[place.place_id]){seenIds[place.place_id]=true;allPlaces.push(place);}
-      });
-      await new Promise(function(r){setTimeout(r,300)});
+      for(var p=0;p<points.length;p++){
+        setStatus(plz+' / '+keyword+': '+(p+1)+'/'+points.length+'...');
+        var results = await fetchFromPoint(points[p].lat, points[p].lng, Math.max(3, searchRadius/points.length*3), keyword);
+        results.forEach(function(place){
+          if(!seenIds[place.place_id]){seenIds[place.place_id]=true;}
+        });
+        await new Promise(function(r){setTimeout(r,300)});
+      }
+
+      var placeIds = Object.keys(seenIds);
+      for(var i=0;i<placeIds.length;i++){
+        setStatus(plz+' Details '+(i+1)+'/'+placeIds.length+'...');
+        try{
+          var det = await get('/details?place_id='+placeIds[i]);
+          det.place_id = placeIds[i];
+          det.user_ratings_total = det.user_ratings_total||0;
+          det._plz = plz;
+          det._keyword = keyword;
+          if(det.user_ratings_total >= 10 && (det.rating||0) >= branche.minRating){
+            if(!allLeads.find(function(l){return l.place_id===det.place_id;})){
+              allLeads.push(det);
+            }
+          }
+        }catch(e){}
+        await new Promise(function(r){setTimeout(r,80)});
+      }
     }
 
-    for(var i=0;i<allPlaces.length;i++){
-      setStatus('PLZ '+plz+': Details '+(i+1)+'/'+allPlaces.length+'...');
-      try{
-        var det = await get('/details?place_id='+allPlaces[i].place_id);
-        det.place_id = allPlaces[i].place_id;
-        det.user_ratings_total = allPlaces[i].user_ratings_total||0;
-        det._plz = plz;
-        if(det.user_ratings_total >= 10 && (det.rating||0) >= 3.5){
-          allLeads.push(det);
-        }
-      }catch(e){}
-      await new Promise(function(r){setTimeout(r,80)});
-    }
-
-    // PLZ als gescrapt markieren
     markDone(plz);
     plzData[plz].status = 'done';
     plzData[plz].layer.setStyle(styleFor(plz));
@@ -342,10 +380,15 @@ async function scrapeSelected(){
   document.getElementById('sSocial').textContent = social;
   document.getElementById('statRow').style.display = 'flex';
   document.getElementById('leadCount').textContent = allLeads.length;
-
   renderLeads();
   renderPLZList();
   switchTab('leads');
+  setStatus('Fertig — '+allLeads.length+' Leads');
+  btn.disabled = false;
+}
+
+
+
   setStatus('Fertig — '+allLeads.length+' Leads gefunden');
   btn.disabled = false;
 }
@@ -458,13 +501,25 @@ async function loadSaved(){
   setStatus('Lade gespeicherte PLZ...');
   for(var i=0;i<done.length;i++){
     var plz=done[i];
-    if(plzData[plz]) continue;
+    if(plzData[plz]){
+      // Bereits auf Karte — Status updaten
+      plzData[plz].status = 'done';
+      plzData[plz].layer.setStyle(styleFor(plz));
+      continue;
+    }
     try{
       var data=await get('/nominatim?plz='+encodeURIComponent(plz));
       addPLZToMap(plz,data.geojson,data.lat,data.lng);
     }catch(e){}
     await new Promise(function(r){setTimeout(r,1100)});
   }
+  // PLZ die für diese Branche nicht done sind auf open setzen
+  Object.keys(plzData).forEach(function(plz){
+    if(done.indexOf(plz)===-1 && plzData[plz].status==='done'){
+      plzData[plz].status='open';
+      plzData[plz].layer.setStyle(styleFor(plz));
+    }
+  });
   setStatus('');
   renderPLZList();
 }
