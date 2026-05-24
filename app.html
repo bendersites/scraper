@@ -268,6 +268,8 @@ function onBrancheChange(){
   // Gespeicherte PLZ für diese Branche laden
   loadSaved();
 }
+
+function toggleSelect(plz){
   if(!plzData[plz]) return;
   plzData[plz].status = plzData[plz].status==='selected' ? 'open' : 'selected';
   plzData[plz].layer.setStyle(styleFor(plz));
@@ -344,28 +346,29 @@ async function scrapeSelected(){
         setStatus(plz+' / '+keyword+': '+(p+1)+'/'+points.length+'...');
         var results = await fetchFromPoint(points[p].lat, points[p].lng, Math.max(3, searchRadius/points.length*3), keyword);
         results.forEach(function(place){
-          if(!seenIds[place.place_id]){seenIds[place.place_id]=true;}
+          if(!seenIds[place.place_id]){
+            seenIds[place.place_id]=true;
+          }
         });
         await new Promise(function(r){setTimeout(r,300)});
       }
+    }
 
-      var placeIds = Object.keys(seenIds);
-      for(var i=0;i<placeIds.length;i++){
-        setStatus(plz+' Details '+(i+1)+'/'+placeIds.length+'...');
-        try{
-          var det = await get('/details?place_id='+placeIds[i]);
-          det.place_id = placeIds[i];
-          det.user_ratings_total = det.user_ratings_total||0;
-          det._plz = plz;
-          det._keyword = keyword;
-          if(det.user_ratings_total >= 10 && (det.rating||0) >= branche.minRating){
-            if(!allLeads.find(function(l){return l.place_id===det.place_id;})){
-              allLeads.push(det);
-            }
+    var placeIds = Object.keys(seenIds);
+    for(var i=0;i<placeIds.length;i++){
+      setStatus(plz+' Details '+(i+1)+'/'+placeIds.length+'...');
+      try{
+        var det = await get('/details?place_id='+placeIds[i]);
+        det.place_id = placeIds[i];
+        det.user_ratings_total = det.user_ratings_total||0;
+        det._plz = plz;
+        if(det.user_ratings_total >= 10 && (det.rating||0) >= branche.minRating){
+          if(!allLeads.find(function(l){return l.place_id===det.place_id;})){
+            allLeads.push(det);
           }
-        }catch(e){}
-        await new Promise(function(r){setTimeout(r,80)});
-      }
+        }
+      }catch(e){}
+      await new Promise(function(r){setTimeout(r,80)});
     }
 
     markDone(plz);
