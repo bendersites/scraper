@@ -227,7 +227,7 @@ function getSelected() { return Object.keys(plzData).filter(function(p){return p
 function resetPLZ(plz) {
   unmarkDone(plz);
   plzData[plz].status = 'open';
-  plzData[plz].layer.setStyle(styleFor(plz));
+  if(plzData[plz].layer) plzData[plz].layer.setStyle(styleFor(plz));
   renderPLZList();
 }
 
@@ -259,10 +259,9 @@ function onBrancheChange() {
   Object.keys(plzData).forEach(function(plz) {
     if(plzData[plz].status!=='selected') {
       plzData[plz].status = isDone(plz)?'done':'open';
-      plzData[plz].layer.setStyle(styleFor(plz));
+      if(plzData[plz].layer) plzData[plz].layer.setStyle(styleFor(plz));
     }
   });
-  renderPLZList();
   loadSaved();
 }
 
@@ -461,31 +460,46 @@ function switchTab(tab) {
   document.getElementById('tabLeads').classList.toggle('hidden',tab!=='leads');
 }
 
-async function loadSaved() {
-  var done=getAllDone();
-  if(!done.length) return;
-  setStatus('Lade gespeicherte PLZ...');
-  for(var i=0;i<done.length;i++) {
-    var plz=done[i];
-    if(plzData[plz]) {
-      plzData[plz].status='done';
-      plzData[plz].layer.setStyle(styleFor(plz));
-      continue;
-    }
-    try {
-      var data=await get('/nominatim?plz='+encodeURIComponent(plz));
-      addPLZToMap(plz,data.geojson,data.lat,data.lng);
-    } catch(e){}
-    await new Promise(function(r){setTimeout(r,1100);});
-  }
-  Object.keys(plzData).forEach(function(plz) {
-    if(done.indexOf(plz)===-1&&plzData[plz].status==='done') {
-      plzData[plz].status='open';
-      plzData[plz].layer.setStyle(styleFor(plz));
+// Gespeicherte PLZ sofort in Liste anzeigen — kein Nominatim beim Start
+function loadSaved() {
+  var done = getAllDone();
+  // Auch PLZ die noch nicht in plzData sind als 'done' eintragen (ohne Polygon)
+  done.forEach(function(plz) {
+    if(!plzData[plz]) {
+      plzData[plz] = {status:'done', lat:null, lng:null, layer:null};
+    } else {
+      plzData[plz].status = 'done';
+      if(plzData[plz].layer) plzData[plz].layer.setStyle(styleFor(plz));
     }
   });
-  setStatus('');
+  // PLZ die für diese Branche nicht done sind auf open setzen
+  Object.keys(plzData).forEach(function(plz) {
+    if(done.indexOf(plz)===-1 && plzData[plz].status==='done') {
+      plzData[plz].status = 'open';
+      if(plzData[plz].layer) plzData[plz].layer.setStyle(styleFor(plz));
+    }
+  });
   renderPLZList();
+}
+
+// PLZ anklicken lädt Polygon nach falls noch nicht vorhanden
+async function jumpTo(plz) {
+  if(!plzData[plz]) return;
+  if(plzData[plz].layer) {
+    map.fitBounds(plzData[plz].layer.getBounds());
+    return;
+  }
+  setStatus('Lade '+plz+'...');
+  try {
+    var data = await get('/nominatim?plz='+encodeURIComponent(plz));
+    var prevStatus = plzData[plz].status;
+    addPLZToMap(plz, data.geojson, data.lat, data.lng);
+    plzData[plz].status = prevStatus;
+    plzData[plz].layer.setStyle(styleFor(plz));
+    map.fitBounds(plzData[plz].layer.getBounds());
+    renderPLZList();
+  } catch(e) { setStatus('Konnte nicht laden: '+plz); }
+  setStatus('');
 }
 
 loadSaved();
