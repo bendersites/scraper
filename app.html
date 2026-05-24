@@ -249,10 +249,19 @@ function renderPLZList() {
       +'<span class="plz-name">'+plz+'</span>'
       +'<span class="plz-status">'+label+'</span>'
       +'<div class="plz-actions">'
-      +(s!=='done'?'<button class="plz-btn" onclick="event.stopPropagation();toggleSelect(\''+plz+'\')">'+(s==='selected'?'✕':'✓')+'</button>':'')
+      +(s==='open'?'<button class="plz-btn" onclick="event.stopPropagation();toggleSelect(\''+plz+'\')">✓</button>':'')
+      +(s==='selected'?'<button class="plz-btn" onclick="event.stopPropagation();toggleSelect(\''+plz+'\')">✕</button>':'')
+      +(s==='selected'?'<button class="plz-btn" style="color:#15803d" onclick="event.stopPropagation();manualDone(\''+plz+'\')">Gescrapt</button>':'')
       +(s==='done'?'<button class="plz-btn" style="color:#dc2626" onclick="event.stopPropagation();resetPLZ(\''+plz+'\')">↺</button>':'')
       +'</div></div>';
   }).join('');
+}
+
+function manualDone(plz) {
+  markDone(plz);
+  plzData[plz].status = 'done';
+  if(plzData[plz].layer) plzData[plz].layer.setStyle(styleFor(plz));
+  renderPLZList();
 }
 
 function onBrancheChange() {
