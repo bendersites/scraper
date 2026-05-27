@@ -93,6 +93,7 @@ input,select{font-size:13px;padding:5px 10px;border-radius:7px;border:1px solid 
         <button class="btn" onclick="addPLZ()">+</button>
       </div>
       <button class="btn btn-dark" id="scrapeBtn" onclick="scrapeSelected()" style="width:100%">Ausgewählte PLZ scrapen</button>
+      <button class="btn" id="loadAllBtn" onclick="loadAllPolygons()" style="width:100%;margin-top:6px">Alle PLZ auf Karte laden</button>
       <div class="stat-row" id="statRow" style="display:none">
         <div class="stat"><span class="stat-n" id="sTotal">0</span>Gefunden</div>
         <div class="stat"><span class="stat-n" id="sNoWeb">0</span>Kein Web</div>
@@ -264,6 +265,30 @@ function manualDone(plz) {
   renderPLZList();
 }
 
+async function loadAllPolygons() {
+  var btn = document.getElementById('loadAllBtn');
+  btn.disabled = true;
+  var keys = Object.keys(plzData);
+  var toLoad = keys.filter(function(plz){ return !plzData[plz].layer; });
+  if(!toLoad.length){ btn.disabled=false; setStatus('Alle bereits geladen'); return; }
+  for(var i=0;i<toLoad.length;i++) {
+    var plz = toLoad[i];
+    btn.textContent = 'Lade '+(i+1)+'/'+toLoad.length+'...';
+    try {
+      var data = await get('/nominatim?plz='+encodeURIComponent(plz));
+      var prevStatus = plzData[plz].status;
+      addPLZToMap(plz, data.geojson, data.lat, data.lng);
+      plzData[plz].status = prevStatus;
+      plzData[plz].layer.setStyle(styleFor(plz));
+    } catch(e){}
+    await new Promise(function(r){setTimeout(r,1200);});
+  }
+  btn.textContent = 'Alle PLZ auf Karte laden';
+  btn.disabled = false;
+  setStatus('');
+  renderPLZList();
+}
+
 function onBrancheChange() {
   Object.keys(plzData).forEach(function(plz) {
     if(plzData[plz].status!=='selected') {
@@ -325,31 +350,43 @@ async function scrapeSelected() {
     var pdata=plzData[plz];
     var seenIds={};
 
-    // Alle Keywords suchen, Place IDs sammeln
+    // Alle Keywords suchen, Place IDs sammeln MIT Basis-Daten (kostenlos)
     for(var k=0;k<branche.keywords.length;k++) {
       var keyword=branche.keywords[k];
       var points=buildGrid(pdata.lat,pdata.lng,searchRadius);
       for(var p=0;p<points.length;p++) {
         setStatus(plz+' / '+keyword+': '+(p+1)+'/'+points.length+'...');
         var results=await fetchFromPoint(points[p].lat,points[p].lng,Math.max(3,searchRadius/Math.max(points.length,1)*3),keyword);
-        results.forEach(function(place){if(!seenIds[place.place_id])seenIds[place.place_id]=place.user_ratings_total||0;});
+        results.forEach(function(place){
+          if(!seenIds[place.place_id]) {
+            // Basis-Filter direkt aus Nearby Search Daten — kostenlos
+            seenIds[place.place_id] = {
+              rating: place.rating||0,
+              total: place.user_ratings_total||0
+            };
+          }
+        });
         await new Promise(function(r){setTimeout(r,300);});
       }
     }
 
-    // Details einmalig pro Place ID laden
-    var placeIds=Object.keys(seenIds);
-    for(var i=0;i<placeIds.length;i++) {
-      setStatus(plz+': Details '+(i+1)+'/'+placeIds.length+'...');
+    // Erst filtern, dann nur für gefilterte Details laden — spart 60-70% Kosten
+    var filtered = Object.keys(seenIds).filter(function(pid){
+      var d = seenIds[pid];
+      return d.total >= 10 && d.rating >= branche.minRating;
+    });
+
+    setStatus(plz+': '+filtered.length+' von '+Object.keys(seenIds).length+' Betrieben laden Details...');
+
+    for(var i=0;i<filtered.length;i++) {
+      setStatus(plz+': Details '+(i+1)+'/'+filtered.length+'...');
       try {
-        var det=await get('/details?place_id='+placeIds[i]);
-        det.place_id=placeIds[i];
-        det.user_ratings_total=det.user_ratings_total||seenIds[placeIds[i]]||0;
+        var det=await get('/details?place_id='+filtered[i]);
+        det.place_id=filtered[i];
+        det.user_ratings_total=det.user_ratings_total||seenIds[filtered[i]].total||0;
         det._plz=plz;
-        if(det.user_ratings_total>=10&&(det.rating||0)>=branche.minRating) {
-          if(!allLeads.find(function(l){return l.place_id===det.place_id;})) {
-            allLeads.push(det);
-          }
+        if(!allLeads.find(function(l){return l.place_id===det.place_id;})) {
+          allLeads.push(det);
         }
       } catch(e){}
       await new Promise(function(r){setTimeout(r,80);});
@@ -439,7 +476,7 @@ async function exportCSV() {
   for(var i=0;i<allLeads.length;i++) {
     if(!allLeads[i].reviews&&allLeads[i].place_id) {
       try {
-        var det=await get('/details?place_id='+allLeads[i].place_id);
+        var det=await get('/details?place_id='+allLeads[i].place_id+'&full=1');
         allLeads[i].reviews=det.reviews||[];
         if(det.opening_hours) allLeads[i].opening_hours=det.opening_hours;
       } catch(e){allLeads[i].reviews=[];}
