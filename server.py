@@ -6,7 +6,7 @@ app = Flask(__name__)
 CORS(app)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-API_KEY = os.environ.get("GOOGLE_API_KEY", "AIzaSyBLWLBYdWwHsUjkf2cGUazOIjtoZoF15xM")
+API_KEY = os.environ.get("GOOGLE_API_KEY", "AIzaSyB3k5BYSO1TegEXsHuZVB-B2sKnYf0ezA8")
 
 @app.route("/")
 def index():
