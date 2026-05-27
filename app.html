@@ -202,7 +202,7 @@ async function addPLZ() {
   document.getElementById('plzInput').value = '';
   for(var i=0;i<parts.length;i++) {
     var plz = parts[i];
-    if(plzData[plz]) { map.fitBounds(plzData[plz].layer.getBounds()); continue; }
+    if(plzData[plz]) { if(plzData[plz].layer) map.fitBounds(plzData[plz].layer.getBounds()); continue; }
     setStatus('Lade '+plz+'...');
     try {
       var data = await get('/nominatim?plz='+encodeURIComponent(plz));
