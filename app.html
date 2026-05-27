@@ -219,7 +219,7 @@ function toggleSelect(plz) {
   if(!plzData[plz]) return;
   if(plzData[plz].status==='done') return; // Gescrapte nicht togglebar
   plzData[plz].status = plzData[plz].status==='selected'?'open':'selected';
-  plzData[plz].layer.setStyle(styleFor(plz));
+  if(plzData[plz].layer) plzData[plz].layer.setStyle(styleFor(plz));
   renderPLZList();
 }
 
@@ -394,7 +394,7 @@ async function scrapeSelected() {
 
     markDone(plz);
     plzData[plz].status='done';
-    plzData[plz].layer.setStyle(styleFor(plz));
+    if(plzData[plz].layer) plzData[plz].layer.setStyle(styleFor(plz));
   }
 
   var noWeb=allLeads.filter(function(p){return !p.website;}).length;
