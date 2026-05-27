@@ -1,4 +1,4 @@
-import os, requests
+import os, requests, json, time
 from flask import Flask, request, jsonify, Response
 from flask_cors import CORS
 
@@ -6,7 +6,11 @@ app = Flask(__name__)
 CORS(app)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-API_KEY = os.environ.get("GOOGLE_API_KEY", "AIzaSyB3k5BYSO1TegEXsHuZVB-B2sKnYf0ezA8")
+API_KEY = os.environ.get("GOOGLE_API_KEY", "AIzaSyBLWLBYdWwHsUjkf2cGUazOIjtoZoF15xM")
+
+# In-Memory Cache für PLZ-Polygone
+plz_cache = {}
+last_nominatim_call = 0
 
 @app.route("/")
 def index():
@@ -41,29 +45,49 @@ def search():
 def details():
     pid = request.args.get("place_id", "")
     if not pid: return jsonify({"error": "place_id fehlt"}), 400
+    # full=1 → Reviews + Öffnungszeiten (teuer, nur beim CSV-Export)
+    # Sonst nur Basic Fields (günstig)
+    full = request.args.get("full", "0") == "1"
+    if full:
+        fields = "name,formatted_address,formatted_phone_number,opening_hours,rating,website,url,reviews,user_ratings_total"
+    else:
+        fields = "name,formatted_address,formatted_phone_number,rating,website,url,user_ratings_total"
     r = requests.get("https://maps.googleapis.com/maps/api/place/details/json", params={
-        "place_id": pid,
-        "fields": "name,formatted_address,formatted_phone_number,opening_hours,rating,website,url,reviews,user_ratings_total",
-        "key": API_KEY, "language": "de"
+        "place_id": pid, "fields": fields, "key": API_KEY, "language": "de"
     })
     return jsonify(r.json().get("result", {}))
 
 @app.route("/nominatim")
 def nominatim():
+    global last_nominatim_call
     plz = request.args.get("plz", "")
     if not plz: return jsonify({"error": "plz fehlt"}), 400
+
+    # Cache prüfen
+    if plz in plz_cache:
+        return jsonify(plz_cache[plz])
+
+    # Rate limit: min 1.2 Sekunden zwischen Requests
+    now = time.time()
+    wait = 1.2 - (now - last_nominatim_call)
+    if wait > 0:
+        time.sleep(wait)
+
     try:
         r = requests.get("https://nominatim.openstreetmap.org/search", params={
             "postalcode": plz, "country": "DE", "format": "json",
             "polygon_geojson": 1, "limit": 1
-        }, headers={"User-Agent": "BenderSites/2.0"}, timeout=15)
+        }, headers={"User-Agent": "BenderSites/2.0 alex@bendersites.de"}, timeout=15)
+        last_nominatim_call = time.time()
         results = r.json()
         if not results: return jsonify({"error": "PLZ nicht gefunden"}), 404
         res = results[0]
-        return jsonify({"lat": float(res["lat"]), "lng": float(res["lon"]), "geojson": res.get("geojson", {})})
+        data = {"lat": float(res["lat"]), "lng": float(res["lon"]), "geojson": res.get("geojson", {})}
+        plz_cache[plz] = data
+        return jsonify(data)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5050))
-    app.run(host="0.0.0.0", port=port)
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 5050))
+    app.run(host='0.0.0.0', port=port)
