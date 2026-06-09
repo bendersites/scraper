@@ -131,42 +131,54 @@ var BRANCHEN = {
 };
 
 function currentBranche() { return document.getElementById('branche').value; }
-function getDB() { try{return JSON.parse(localStorage.getItem('bs_scraper')||'{}')}catch(e){return {}} }
-function saveDB(d) { localStorage.setItem('bs_scraper', JSON.stringify(d)); }
 
-(function migrate(){
-  var d = getDB();
-  if(!d.done) return;
-  var old = d.done;
+var API = 'https://scrape-api.bendersites.workers.dev';
+var d1Cache = null;
 
-  var blumen = ['50354','50374','50931','50937','51061','51103','51145','51491','53111','53115','53179','53227','53424','53773','53913','10115','10117','10119','10178','10179','10245','10247','10317','10369','10405','10407','10409','10435','10437','10439','10559','10585','10589','10625','10627','10629','10709','10785','10999','12679','12681','12683','13053','13055','13088','13189','13347','13353','13355','13629','14050','14052','14053','14057','14059'];
+async function loadD1Cache() {
+  if(d1Cache) return d1Cache;
+  try {
+    var r = await fetch(API+'/plz');
+    var rows = await r.json();
+    d1Cache = {};
+    Object.keys(BRANCHEN).forEach(function(b){ d1Cache[b]={}; });
+    rows.forEach(function(row){
+      if(!d1Cache[row.branche]) d1Cache[row.branche]={};
+      d1Cache[row.branche][row.plz]=row.scraped_at;
+    });
+  } catch(e){ console.error('D1 load failed',e); d1Cache={}; }
+  return d1Cache;
+}
 
-  var schreibwaren = ['50129','50259','50321','50672','50733','50968','51109','51143','51147','51429','53111','53332','53347','53474','53604','53639','53721','53881','53894','10115','10117','10119','10178','10179','10243','10245','10247','10249','10315','10317','10318','10319','10365','10367','10369','10405','10407','10409','10435','10437','10439','10551','10553','10555','10557','10559','10585','10587','10589','10623','10625','10627','10629','10707','10709','10711','10713','10715','10717','10719','10777','10779','10781','10783','10785','10787','10789','10823','10825','10827','10829','10961','10963','10965','10967','10969','10997','10999','12043','12045','12047','12049','12051','12053','12055','12057','12059','12099','12101','12103','12105','12107','12109','12157','12159','12161','12163','12165','12167','12169','12203','12205','12207','12209','12247','12249','12277','12305','12307','12309','12347','12349','12351','12353','12355','12357','12359','12435','12437','12439','12459','12487','12489','12524','12526','12527','12555','12557','12559','12587','12589','12619','12621','12623','12627','12629','12679','12681','12683','12685','12687','12689','13051','13053','13055','13057','13059','13086','13088','13089','13125','13127','13129','13156','13158','13159','13187','13189','13347','13349','13351','13353','13355','13357','13359','13403','13405','13407','13409','13435','13437','13439','13465','13467','13469','13503','13505','13507','13509','13581','13583','13585','13587','13589','13591','13593','13595','13597','13599','13627','13629','14050','14052','14055','14057','14059','14163','14165','14167','14169','14193','14195','14197','14199','14467','14469','14471','14473','14476','14478','14480','14482','14513','14532','14542','14548','14612','15345','15366','15569','14979','12349','03362'];
+function isDone(plz) {
+  if(!d1Cache) return false;
+  var b=currentBranche();
+  return !!(d1Cache[b]&&d1Cache[b][plz]);
+}
 
-  var friseur = ['10115','10117','10119','10247','10315','10317','10365','10367','10405','10435','10437','10439','10559','10585','10587','10623','10627','10629','10709','10711','10785','10999','13053','13055','13353','13357','13599','13629','14057','14059'];
+async function markDone(plz) {
+  var b=currentBranche(), date=new Date().toISOString().slice(0,10);
+  if(!d1Cache) d1Cache={};
+  if(!d1Cache[b]) d1Cache[b]={};
+  d1Cache[b][plz]=date;
+  try {
+    await fetch(API+'/plz',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({branche:b,plz:plz,scraped_at:date})});
+  } catch(e){ console.error('D1 markDone failed',e); }
+}
 
-  var kosmetik = ['50226','50321','50354','50374','53111','53340','53347','53474','53639','53721','53757','53773','53879','53902','53913','53919'];
+async function unmarkDone(plz) {
+  var b=currentBranche();
+  if(d1Cache&&d1Cache[b]) delete d1Cache[b][plz];
+  try {
+    await fetch(API+'/plz/delete',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({branche:b,plz:plz})});
+  } catch(e){ console.error('D1 unmarkDone failed',e); }
+}
 
-  var migrated = {};
-  Object.keys(BRANCHEN).forEach(function(b){ migrated[b] = {}; });
-
-  Object.keys(old).forEach(function(plz){
-    var dat = old[plz];
-    if(blumen.indexOf(plz)!==-1)      migrated.blumen[plz] = dat;
-    if(schreibwaren.indexOf(plz)!==-1) migrated.schreibwaren[plz] = dat;
-    if(friseur.indexOf(plz)!==-1)     migrated.friseur[plz] = dat;
-    if(kosmetik.indexOf(plz)!==-1)    migrated.kosmetik[plz] = dat;
-    var assigned = blumen.indexOf(plz)!==-1||schreibwaren.indexOf(plz)!==-1||friseur.indexOf(plz)!==-1||kosmetik.indexOf(plz)!==-1;
-    if(!assigned) migrated.schreibwaren[plz] = dat;
-  });
-
-  saveDB(migrated);
-  console.log('Migration OK');
-})();
-function isDone(plz) { var d=getDB(),b=currentBranche(); return !!(d[b]&&d[b][plz]); }
-function markDone(plz) { var d=getDB(),b=currentBranche(); if(!d[b])d[b]={}; d[b][plz]=new Date().toISOString().slice(0,10); saveDB(d); }
-function unmarkDone(plz) { var d=getDB(),b=currentBranche(); if(d[b])delete d[b][plz]; saveDB(d); }
-function getAllDone() { var d=getDB(),b=currentBranche(); return d[b]?Object.keys(d[b]):[]; }
+function getAllDone() {
+  if(!d1Cache) return [];
+  var b=currentBranche();
+  return d1Cache[b]?Object.keys(d1Cache[b]):[];
+}
 function isSocial(url) { return url&&SOCIAL.some(function(s){return url.toLowerCase().includes(s);}); }
 function stars(r) { if(!r)return ''; var f=Math.round(r); return '★'.repeat(f)+'☆'.repeat(5-f)+' '+r.toFixed(1); }
 function setStatus(msg) { document.getElementById('headerStatus').textContent=msg; }
@@ -182,7 +194,7 @@ function styleFor(plz) {
 }
 
 async function get(path) {
-  var r = await fetch(path);
+  var r = await fetch(API+path);
   if(!r.ok) throw new Error(await r.text());
   return r.json();
 }
@@ -227,8 +239,8 @@ function toggleSelect(plz) {
 
 function getSelected() { return Object.keys(plzData).filter(function(p){return plzData[p].status==='selected';}); }
 
-function resetPLZ(plz) {
-  unmarkDone(plz);
+async function resetPLZ(plz) {
+  await unmarkDone(plz);
   plzData[plz].status = 'open';
   if(plzData[plz].layer) plzData[plz].layer.setStyle(styleFor(plz));
   renderPLZList();
@@ -260,8 +272,8 @@ function renderPLZList() {
   }).join('');
 }
 
-function manualDone(plz) {
-  markDone(plz);
+async function manualDone(plz) {
+  await markDone(plz);
   plzData[plz].status = 'done';
   if(plzData[plz].layer) plzData[plz].layer.setStyle(styleFor(plz));
   renderPLZList();
@@ -301,33 +313,17 @@ function onBrancheChange() {
   loadSaved();
 }
 
-function buildGrid(lat,lng,radiusKm) {
-  var stepKm=radiusKm>15?8:radiusKm>8?5:Math.max(radiusKm,2);
-  var points=[],seen={};
-  var latStep=stepKm/111,lngStep=stepKm/(111*Math.cos(lat*Math.PI/180));
-  var steps=Math.ceil(radiusKm/stepKm);
-  for(var dy=-steps;dy<=steps;dy++) {
-    for(var dx=-steps;dx<=steps;dx++) {
-      var la=lat+dy*latStep,lo=lng+dx*lngStep;
-      var dist=Math.sqrt(Math.pow((la-lat)*111,2)+Math.pow((lo-lng)*111*Math.cos(lat*Math.PI/180),2));
-      if(dist<=radiusKm) {
-        var key=la.toFixed(3)+','+lo.toFixed(3);
-        if(!seen[key]){seen[key]=true;points.push({lat:la,lng:lo});}
-      }
-    }
-  }
-  return points;
-}
-
-async function fetchFromPoint(lat,lng,radiusKm,keyword) {
-  var places=[],token='',page=0;
+// Ein einziger Nearby Search Call pro Keyword — kein Grid
+// Radius: PLZ-Gebiet ≈ 2km Stadtbezirk, größere PLZ bis 5km
+async function fetchAllForKeyword(lat, lng, radiusKm, keyword) {
+  var places=[], token='', page=0;
   do {
     if(token) await new Promise(function(r){setTimeout(r,2200);});
     var url='/search?lat='+lat+'&lng='+lng+'&radius='+(radiusKm*1000)+'&keyword='+encodeURIComponent(keyword);
     if(token) url+='&pagetoken='+encodeURIComponent(token);
     try {
       var res=await get(url);
-      if(res.status==='OK') places=places.concat(res.results||[]);
+      if(res.status==='OK'||res.status==='ZERO_RESULTS') places=places.concat(res.results||[]);
       token=res.next_page_token||'';
     } catch(e){token='';}
     page++;
@@ -341,7 +337,7 @@ async function scrapeSelected() {
   var brancheKey=currentBranche();
   var branche=BRANCHEN[brancheKey];
   var radiusKm=parseInt(document.getElementById('radius').value)||0;
-  var searchRadius=radiusKm>0?radiusKm:5;
+  var searchRadius=radiusKm>0?radiusKm:3; // Standard 3km statt 5km — spart ~40% Calls
   var btn=document.getElementById('scrapeBtn');
   btn.disabled=true;
   allLeads=[];
@@ -350,35 +346,33 @@ async function scrapeSelected() {
   for(var pi=0;pi<selected.length;pi++) {
     var plz=selected[pi];
     var pdata=plzData[plz];
+    if(!pdata.lat||!pdata.lng) {
+      setStatus(plz+': keine Koordinaten — PLZ zuerst auf Karte laden');
+      continue;
+    }
     var seenIds={};
 
-    // Alle Keywords suchen, Place IDs sammeln MIT Basis-Daten (kostenlos)
+    // Pro Keyword: 1 Call (+ bis zu 2 Folgeseiten bei next_page_token)
+    // Statt: Keywords × Grid-Punkte Calls
     for(var k=0;k<branche.keywords.length;k++) {
       var keyword=branche.keywords[k];
-      var points=buildGrid(pdata.lat,pdata.lng,searchRadius);
-      for(var p=0;p<points.length;p++) {
-        setStatus(plz+' / '+keyword+': '+(p+1)+'/'+points.length+'...');
-        var results=await fetchFromPoint(points[p].lat,points[p].lng,Math.max(3,searchRadius/Math.max(points.length,1)*3),keyword);
-        results.forEach(function(place){
-          if(!seenIds[place.place_id]) {
-            // Basis-Filter direkt aus Nearby Search Daten — kostenlos
-            seenIds[place.place_id] = {
-              rating: place.rating||0,
-              total: place.user_ratings_total||0
-            };
-          }
-        });
-        await new Promise(function(r){setTimeout(r,300);});
-      }
+      setStatus(plz+' / '+keyword+'...');
+      var results=await fetchAllForKeyword(pdata.lat,pdata.lng,searchRadius,keyword);
+      results.forEach(function(place){
+        if(!seenIds[place.place_id]) {
+          seenIds[place.place_id]={rating:place.rating||0,total:place.user_ratings_total||0};
+        }
+      });
+      await new Promise(function(r){setTimeout(r,300);});
     }
 
-    // Erst filtern, dann nur für gefilterte Details laden — spart 60-70% Kosten
-    var filtered = Object.keys(seenIds).filter(function(pid){
-      var d = seenIds[pid];
-      return d.total >= 10 && d.rating >= branche.minRating;
+    // Filter vor Details-Call — spart den teuren API-Call für schlechte Einträge
+    var filtered=Object.keys(seenIds).filter(function(pid){
+      var d=seenIds[pid];
+      return d.total>=10&&d.rating>=branche.minRating;
     });
 
-    setStatus(plz+': '+filtered.length+' von '+Object.keys(seenIds).length+' Betrieben laden Details...');
+    setStatus(plz+': '+filtered.length+' von '+Object.keys(seenIds).length+' laden Details...');
 
     for(var i=0;i<filtered.length;i++) {
       setStatus(plz+': Details '+(i+1)+'/'+filtered.length+'...');
@@ -394,7 +388,7 @@ async function scrapeSelected() {
       await new Promise(function(r){setTimeout(r,80);});
     }
 
-    markDone(plz);
+    await markDone(plz);
     plzData[plz].status='done';
     if(plzData[plz].layer) plzData[plz].layer.setStyle(styleFor(plz));
   }
@@ -508,10 +502,9 @@ function switchTab(tab) {
   document.getElementById('tabLeads').classList.toggle('hidden',tab!=='leads');
 }
 
-// Gespeicherte PLZ sofort in Liste anzeigen — kein Nominatim beim Start
-function loadSaved() {
+async function loadSaved() {
+  await loadD1Cache();
   var done = getAllDone();
-  // Auch PLZ die noch nicht in plzData sind als 'done' eintragen (ohne Polygon)
   done.forEach(function(plz) {
     if(!plzData[plz]) {
       plzData[plz] = {status:'done', lat:null, lng:null, layer:null};
@@ -520,7 +513,6 @@ function loadSaved() {
       if(plzData[plz].layer) plzData[plz].layer.setStyle(styleFor(plz));
     }
   });
-  // PLZ die für diese Branche nicht done sind auf open setzen
   Object.keys(plzData).forEach(function(plz) {
     if(done.indexOf(plz)===-1 && plzData[plz].status==='done') {
       plzData[plz].status = 'open';
@@ -550,7 +542,11 @@ async function jumpTo(plz) {
   setStatus('');
 }
 
-loadSaved();
+(async function(){
+  setStatus('Lade PLZ-Status...');
+  await loadSaved();
+  setStatus('');
+})();
 </script>
 </body>
 </html>
